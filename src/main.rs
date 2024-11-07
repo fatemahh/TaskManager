@@ -1,4 +1,4 @@
-use sysinfo::{System, Process};
+use sysinfo::System;
 use std::{collections::HashMap, time::Duration};
 use clearscreen;
 
@@ -33,7 +33,6 @@ fn main() {
             }
         });
 
-        // Clear the terminal screen using clearscreen library
         clearscreen::clear().unwrap();
 
         // Print header
