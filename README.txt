@@ -1,4 +1,4 @@
-z# TaskManager
+# TaskManager
 Task Manager in Rust for Linux
 Milestone 1 Objectives:
 - View processes ID				DONE
@@ -13,12 +13,12 @@ Milestone 1 Objectives:
 - Show total number of processes, sleeping processes, running processes, stopped processes      DONE
 
 Later Objectives:
-- GUI
+- GUI	DONE
 - Tree view with parent & children processes
 - Sort processes by CPU usage or memory usage
 - Send notification if the process reaches a pre-set max for CPU or memory usage
 - Filter processes using status 	DONE
-- Color-coded
+- Color-coded DONE
 - CPU and Memory real-time graph of utilization
 
 Journal:
@@ -33,3 +33,5 @@ Journal:
 - 15/11/24: Mariam implemented functionality to show the total number of processes, as well as the number of sleeping, running, and stopped processes.
 - 16/11/24: Fatemah added filter processes using status functionality.
 - 24/11/24: Yussuf added EGUI basic skeleton which displays processes and their data with some color coding.
+- 25/11/24: Fatemah changed directory to have cmd and gui, trying to change speed of gui change
+
