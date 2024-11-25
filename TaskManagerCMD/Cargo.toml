@@ -1,0 +1,15 @@
+[package]
+name = "Task_Manager"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sysinfo = "0.32.0"
+crossterm = "0.26"
+clearscreen = "2.0.1"
+nix = "0.23"
+regex = "1.5"      
+serde = "1.0"      
+serde_json = "1.0" 
