@@ -14,25 +14,33 @@ impl Default for TaskManager {
             last_update: Instant::now(),
             refresh_interval: Duration::from_secs(1),
             system: System::new_all(),
+            sort_criteria: SortCriteria::Memory,
+            reverse_sort: false,
         }
     }
+}
+//used to determine sort style
+#[derive(PartialEq)]//this is an attribute it can be derived from so that it allows comparisons (If sort_crit==mem)
+enum SortCriteria {
+    Memory,
+    CPU,
 }
 
 struct TaskManager {
     last_update: Instant,
     refresh_interval: Duration,
     system: sysinfo::System, //default value
+    sort_criteria: SortCriteria,
+    reverse_sort: bool,//ASC or DEC
+}
+
+fn get_total_memory_mb(system: &sysinfo::System) -> f32 {
+    system.total_memory() as f32 / 1024.0 // Convert from KB to MB
 }
 
 fn main() {
 
-    // SINCE WE ARE SURE THE TERMINAL ONE IS WORKING CORRECTLY ONCE WE DON'T KNOW WHETHER THE GUI
-    // DISPLAYS CORRECT RESULTS OR NOT, WE DISABLE GUI CODE AND ENABLE THE CODE BELOW TO SEE THE CORRECT VALUES
-    // terminal_ui();
-
-    //THIS IS GUI FUNCTION, COMMENT TO DISABLE
-    startGUI();
-    
+    startGUI(); 
 }
 
 fn startGUI(){
@@ -41,6 +49,7 @@ fn startGUI(){
         "Task Manager",
         eframe::NativeOptions {
             drag_and_drop_support: true,
+            maximized: true,
             initial_window_size: Some(egui::vec2(800.0, 600.0)), //this determines starting resolution
             ..Default::default()
         },
@@ -48,101 +57,6 @@ fn startGUI(){
     );
 }
 
-//this is currently just a terminal function, it isn't actaully called or anything like that, but still important
-// don't delete!!!
-fn terminal_ui() {
-    println!("Welcome! Type 'help' to view all commands.");
-    let mut system = sysinfo::System::new_all();
-
-    loop {
-        print!("> ");
-        io::stdout().flush().unwrap();
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).expect("Failed to read input");
-        let input = input.trim();
-
-        match input.split_whitespace().collect::<Vec<&str>>().as_slice() {
-            &["display"] => {
-                loop {
-                    if event::poll(Duration::from_millis(100)).expect("Failed to poll event") {
-                        if let event::Event::Key(_) = event::read().expect("Failed to read event") {
-                            terminal::disable_raw_mode().expect("Failed to disable raw mode");
-                            println!("Process data view ended.");
-                            break;
-                        }
-                    }
-                    // Refresh system and process information
-                    system.refresh_all();
-
-                    // Collect process data and aggregate by name
-                    let mut aggregated_processes: HashMap<String, (u64, f32, Option<u32>, Option<ProcessStatus>)> = HashMap::new();
-                    for (_, process) in system.processes() {
-                        if process.memory() > 0 {
-                            let entry = aggregated_processes
-                                .entry(process.name().to_string_lossy().to_string())
-                                .or_insert((0, 0.0, None, None));
-                            entry.0 += process.memory();  // Sum memory usage
-                            entry.1 += process.cpu_usage();  // Sum CPU usage
-
-                            if entry.2.is_none() {
-                                entry.2 = Some(process.pid().as_u32());
-                            }
-
-                            if entry.3.is_none() {
-                                entry.3 = Some(process.status());
-                            }
-                        }
-                    }
-                    let mut sorted_processes: Vec<_> = aggregated_processes.into_iter().collect();
-                    sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Compare the memory usage values
-
-                    clearscreen::clear().unwrap();
-                    terminal::disable_raw_mode().expect("Failed to re-enter raw mode");
-
-                    // Print header
-                    println!("{:<10} {:<20} {:<15} {:<15} {:<15}", "PID", "Name", "Memory (MB)", "CPU Usage (%)", "Status");
-
-                    // Print aggregated process details
-                    for (name, (memory, cpu, pid, status)) in sorted_processes {
-                        println!(
-                            "{:<10} {:<20} {:<15.2} {:<15.2} {:<15}",
-                            pid.unwrap_or(0),
-                            name,
-                            memory / (1024*1024),
-                            cpu,
-                            status.map_or("Unknown".to_string(), |s| format!("{:?}", s))
-                        );
-                    }
-                    terminal::enable_raw_mode().expect("Failed to re-enter raw mode");
-
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-            }
-            &["exit"] => {
-                println!("Goodbye!");
-                break;
-            }
-            &["help"] => {
-                println!(
-                    "Available commands:
-                    \n  -- 'display'            : View processes info.
-                    \n  -- 'display <status>'   : View processes by status (e.g., 'display sleep')
-                    \n  -- 'search <proc_id>'   : Search for a process by its PID.
-                    \n  -- 'kill <proc_id>'     : Kill a process, where <proc_id> is the process ID.
-                    \n  -- 'sleep <proc_id>'    : Put a process to sleep, where <proc_id> is the process ID.
-                    \n  -- 'resume <proc_id>'   : Resume a sleeping process, where <proc_id> is the process ID.
-                    \n  -- 'count'              : Display process counts by state.
-                    \n  -- 'exit'               : To exit the Task Manager.
-                    \n"
-                );
-            }
-            _ => {
-                println!("Unknown command. Type 'help' to view all commands.");
-            }
-        }
-    }
-}
 
 impl TaskManager {
     pub fn new() -> Self {
@@ -150,6 +64,8 @@ impl TaskManager {
             last_update: Instant::now(),
             refresh_interval: Duration::from_millis(100),
             system: System::new_all(),
+            sort_criteria: SortCriteria::Memory,
+            reverse_sort: false,
         }
     }
 }
@@ -184,6 +100,22 @@ impl eframe::App for TaskManager { //this is 3rd time struct is used
                     .strong(), //make it bold
                 );
             });
+
+            ui.allocate_space(egui::vec2(0.0, 20.0));
+            //display a sorting text to make sure the user knows what we are sorting by instead of guessing
+            let sorting_text = format!(
+                "Sorting by: {} ({})",
+                match self.sort_criteria {
+                    SortCriteria::Memory => "Memory",
+                    SortCriteria::CPU => "CPU",
+                },
+                if self.reverse_sort { "ASC" } else { "DESC" }
+            );            
+            ui.label(
+                egui::RichText::new(sorting_text)
+                    .color(egui::Color32::LIGHT_BLUE)
+                    .size(20.0),
+            );
             //some vertical space
             ui.allocate_space(egui::vec2(0.0, 40.0));
             ui.end_row();
@@ -191,10 +123,11 @@ impl eframe::App for TaskManager { //this is 3rd time struct is used
             egui::ScrollArea::vertical().show(ui, |ui| { // Use `vertical()` for vertical scrolling
                 // Create a table layout to show processes
                 egui::Grid::new("process_grid").show(ui, |ui| {
+
                     ui.label(//this creates a UI label with text PID, color white, and size 18
                         egui::RichText::new("PID")
                             .color(egui::Color32::WHITE)
-                            .size(18.0),
+                            .size(18.0)
                     );
                     ui.allocate_space(egui::vec2(20.0, 0.0));//this creates a space, as 2d vector where
                     //20 is the horizental value and 0 is the vertical one it creates only hroizental space
@@ -203,18 +136,33 @@ impl eframe::App for TaskManager { //this is 3rd time struct is used
                             .color(egui::Color32::WHITE)
                             .size(18.0),
                     );
-                    ui.allocate_space(egui::vec2(20.0, 0.0));
-                    ui.label(
+                    ui.allocate_space(egui::vec2(30.0, 0.0));
+                    //create a button, same setup as label but it has clicked event which  decides what happens 
+                    //once it is clicked, here we change taskManager struct reverse_sort and sort criteria 
+                    if ui.button(
                         egui::RichText::new("Memory (MB)")
                             .color(egui::Color32::WHITE)
-                            .size(18.0),
-                    );
+                            .size(18.0),).clicked() {
+                        if let SortCriteria::Memory = self.sort_criteria {
+                            self.reverse_sort = !self.reverse_sort; // Reverse order
+                        } else {
+                            self.sort_criteria = SortCriteria::Memory;
+                            self.reverse_sort = false; // Reset order
+                        }
+                    }
                     ui.allocate_space(egui::vec2(20.0, 0.0));
-                    ui.label(
+                    if ui.button( 
                         egui::RichText::new("CPU Usage (%)")
-                            .color(egui::Color32::WHITE)
-                            .size(18.0),
-                    );
+                    .color(egui::Color32::WHITE)
+                    .size(18.0),).clicked()
+                    {
+                        if let SortCriteria::CPU = self.sort_criteria {
+                            self.reverse_sort = !self.reverse_sort;
+                        } else {
+                            self.sort_criteria = SortCriteria::CPU;
+                            self.reverse_sort = false;
+                        }
+                    }
                     ui.allocate_space(egui::vec2(20.0, 0.0));
                     ui.label(
                         egui::RichText::new("Status")
@@ -249,29 +197,69 @@ impl eframe::App for TaskManager { //this is 3rd time struct is used
                     
                     // Sort the aggregated data by memory
                     let mut sorted_processes: Vec<_> = aggregated_processes.into_iter().collect();
-                    sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Compare memory usage
-                    
+                    match self.sort_criteria {
+                        SortCriteria::Memory => {
+                            sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+                        }
+                        SortCriteria::CPU => {
+                            sorted_processes.sort_by(|a, b| b.1.1.partial_cmp(&a.1.1).unwrap());
+                        }
+                    }
+                    if self.reverse_sort {
+                        sorted_processes.reverse();
+                    }
+                    let total_memory = get_total_memory_mb(&self.system) * 1024.0 * 1024.0;
+                    let num_cores = self.system.cpus().len() as f32;
                     // Display sorted processes in the table by looping over them one by one
                     for (name, (memory, cpu, pid, status)) in sorted_processes {
-                        ui.label(pid.map_or("Unknown".to_string(), |v| v.to_string()));//here it creates a label and displays pid in it
+                        let normalized_cpu = cpu / num_cores;
+                        ui.label(
+                            egui::RichText::new(pid.map_or("Unknown".to_string(), |v| v.to_string()))
+                                    .color(egui::Color32::WHITE)
+                                    .size(15.0),
+                            );//here it creates a label and displays pid in it
                         ui.allocate_space(egui::vec2(20.0, 0.0));//horizental space to match headers
-                        ui.label(name);
+                        ui.label(
+                            egui::RichText::new(name)
+                                    .color(egui::Color32::WHITE)
+                                    .size(15.0),
+                            );
+                        ui.allocate_space(egui::vec2(30.0, 0.0));
+                        let temp = memory as f32;
+                        let memory_bytes = temp * 1024.0 as f32;
+                        let memory_color = if memory_bytes < total_memory * 0.05 {
+                            egui::Color32::from_gray(128)
+                        } else if memory_bytes < total_memory * 0.20 {
+                            egui::Color32::GREEN
+                        } else if memory_bytes < total_memory * 0.50 {
+                            egui::Color32::YELLOW
+                        } else if memory_bytes < total_memory * 0.75 {
+                            egui::Color32::from_rgb(255, 165, 0)
+                        } else {
+                            egui::Color32::RED
+                        };
+                        ui.label(                          
+                            egui::RichText::new(((memory / (1024 * 1024)).to_string()))
+                                 .color(memory_color)
+                                    .size(15.0),
+                            );
                         ui.allocate_space(egui::vec2(20.0, 0.0));
-                        ui.label((memory / (1024 * 1024)).to_string());
-                        ui.allocate_space(egui::vec2(20.0, 0.0));
-                        let rounded_cpu = format!("{:.2}%", cpu);//here we set cpu text color based on cpu value
-                            let cpu_color = if cpu < 20.0 {
-                                egui::Color32::GREEN//green if less than 20%
-                            } else if cpu < 50.0 {
-                                egui::Color32::YELLOW//yellow if less thann 50% etc...
-                            } else if cpu < 70.0 {
-                                egui::Color32::from_rgb(255, 165, 0)//this is oragne because it isn't predefined like the others
+                        let rounded_cpu = format!("{:.2}%", normalized_cpu);//here we set cpu text color based on cpu value
+                            let cpu_color = if normalized_cpu < 5.0 {
+                                egui::Color32::from_gray(128)//gray if less than 5%
+                            } else if normalized_cpu < 30.0 {
+                                egui::Color32::GREEN//green if less than 30%
+                            } else if normalized_cpu < 60.0 {
+                                egui::Color32::YELLOW//yellow if less thann 60% etc...
+                            } else if normalized_cpu < 80.0 {
+                                egui::Color32::from_rgb(255, 165, 0)//this is orange because it isn't predefined like the others
                             } else {
                                 egui::Color32::RED
                             };
                             ui.label(//then create the label with the desired color and text
                                 egui::RichText::new(rounded_cpu)
                                     .color(cpu_color)
+                                    .size(15.0),
                             );
                         //same as cpu
                         ui.allocate_space(egui::vec2(20.0, 0.0));
@@ -287,7 +275,10 @@ impl eframe::App for TaskManager { //this is 3rd time struct is used
                         ui.label(
                             egui::RichText::new(status.map_or_else(|| "Unknown".to_string(), |s| format!("{:?}", s)))
                                 .color(st_color)
+                                .size(15.0),
                         );
+                        ui.end_row();
+                        ui.allocate_space(egui::vec2(0.0, 2.0));
                         ui.end_row();
                     }
                 });
