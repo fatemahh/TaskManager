@@ -18,60 +18,7 @@ fn main() {
       
         match input.split_whitespace().collect::<Vec<&str>>().as_slice() {
             &["display"] => {
-                loop {
-                    if event::poll(Duration::from_millis(100)).expect("Failed to poll event") {
-                        if let event::Event::Key(_) = event::read().expect("Failed to read event") {
-                            terminal::disable_raw_mode().expect("Failed to disable raw mode");
-                            println!("Process data view ended.");
-                            break;
-                        }
-                    }
-                    // Refresh system and process information
-                    system.refresh_all();
-
-                    // Collect process data and aggregate by name
-                    let mut aggregated_processes: HashMap<String, (u64, f32, Option<u32>, Option<ProcessStatus>)> = HashMap::new();
-                    for (_, process) in system.processes() {
-                        if process.memory() > 0 {
-                            let entry = aggregated_processes
-                                .entry(process.name().to_string_lossy().to_string())
-                                .or_insert((0, 0.0, None, None));
-                            entry.0 += process.memory();  // Sum memory usage
-                            entry.1 += process.cpu_usage();  // Sum CPU usage
-
-                            if entry.2.is_none() {
-                                entry.2 = Some(process.pid().as_u32());
-                            }
-
-                            if entry.3.is_none() {
-                                entry.3 = Some(process.status());
-                            }
-                        }
-                    }
-                    let mut sorted_processes: Vec<_> = aggregated_processes.into_iter().collect();
-                    sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Compare the memory usage values
-
-
-                    clearscreen::clear().unwrap();
-                    terminal::disable_raw_mode().expect("Failed to re-enter raw mode");
-                    // Print header
-                    println!("{:<10} {:<20} {:<15} {:<15} {:<15}", "PID", "Name", "Memory (MB)", "CPU Usage (%)", "Status");
-
-                    // Print aggregated process details
-                    for (name, (memory, cpu, pid, status)) in sorted_processes {
-                        println! (
-                            "{:<10} {:<20} {:<15.2} {:<15.2} {:<15}",
-                            pid.unwrap_or(0),
-                            name,
-                            memory / (1024*1024),
-                            cpu,
-                            status.map_or("Unknown".to_string(), |s| format!("{:?}", s))
-                        );
-                    }
-                    terminal::enable_raw_mode().expect("Failed to re-enter raw mode");
-
-                    std::thread::sleep(Duration::from_millis(100));
-                }
+                display(&mut system);
             }
             &["display", status] => {
                 display_processes(&mut system, Some(status));
@@ -132,23 +79,62 @@ fn main() {
     }
 }
 
-fn with_process(pid_str: &str, system: &mut System) -> bool {
-    // Parse the input string into a numeric PID
-    if let Ok(pid_num) = pid_str.parse::<u32>() {
-        // Convert the numeric PID into the `sysinfo::Pid` type
-        let sys_pid = sysinfo::Pid::from_u32(pid_num);
-        // Check if a process with the given PID exists in the system
-        if system.process(sys_pid).is_some() {
-            return true; // Process exists, return true
-        } else {
-            // Print a message if the process is not found
-            println!("Process with PID {} not found.", pid_num);
-            return false; // Process does not exist, return false
+fn display(system: &mut sysinfo::System)
+{
+    loop {
+        if event::poll(Duration::from_millis(100)).expect("Failed to poll event") {
+            if let event::Event::Key(_) = event::read().expect("Failed to read event") {
+                terminal::disable_raw_mode().expect("Failed to disable raw mode");
+                println!("Process data view ended.");
+                break;
+            }
         }
-    } else {
-        // If the input is not a valid numeric PID, print an error message
-        println!("Invalid PID. Please provide a valid numeric PID.");
-        return false; // Return false for invalid input
+
+        // Refresh system and process information
+        system.refresh_all();
+
+        // Collect process data and aggregate by name
+        let mut aggregated_processes: HashMap<String, (u64, f32, Option<u32>, Option<ProcessStatus>)> = HashMap::new();
+        for (_, process) in system.processes() {
+            if process.memory() > 0 {
+                let entry = aggregated_processes
+                    .entry(process.name().to_string_lossy().to_string())
+                    .or_insert((0, 0.0, None, None));
+                entry.0 += process.memory();  // Sum memory usage
+                entry.1 += process.cpu_usage();  // Sum CPU usage
+
+                if entry.2.is_none() {
+                    entry.2 = Some(process.pid().as_u32());
+                }
+
+                if entry.3.is_none() {
+                    entry.3 = Some(process.status());
+                }
+            }
+        }
+        let mut sorted_processes: Vec<_> = aggregated_processes.into_iter().collect();
+        sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Compare the memory usage values
+
+
+        clearscreen::clear().unwrap();
+        terminal::disable_raw_mode().expect("Failed to re-enter raw mode");
+        // Print header
+        println!("{:<10} {:<20} {:<15} {:<15} {:<15}", "PID", "Name", "Memory (MB)", "CPU Usage (%)", "Status");
+
+        // Print aggregated process details
+        for (name, (memory, cpu, pid, status)) in sorted_processes {
+            println! (
+                "{:<10} {:<20} {:<15.2} {:<15.2} {:<15}",
+                pid.unwrap_or(0),
+                name,
+                memory / (1024*1024),
+                cpu,
+                status.map_or("Unknown".to_string(), |s| format!("{:?}", s))
+            );
+        }
+        terminal::enable_raw_mode().expect("Failed to re-enter raw mode");
+
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -200,6 +186,26 @@ fn display_processes(system: &mut System, status_filter: Option<&str>) {
 }    
 
 
+fn with_process(pid_str: &str, system: &mut System) -> bool {
+    // Parse the input string into a numeric PID
+    if let Ok(pid_num) = pid_str.parse::<u32>() {
+        // Convert the numeric PID into the `sysinfo::Pid` type
+        let sys_pid = sysinfo::Pid::from_u32(pid_num);
+        // Check if a process with the given PID exists in the system
+        if system.process(sys_pid).is_some() {
+            return true; // Process exists, return true
+        } else {
+            // Print a message if the process is not found
+            println!("Process with PID {} not found.", pid_num);
+            return false; // Process does not exist, return false
+        }
+    } else {
+        // If the input is not a valid numeric PID, print an error message
+        println!("Invalid PID. Please provide a valid numeric PID.");
+        return false; // Return false for invalid input
+    }
+}
+
 fn search_process(pid: u32, system: &System) {
     // Attempt to retrieve the process with the given PID from the system
     if let Some(process) = system.process(sysinfo::Pid::from_u32(pid)) {
@@ -224,7 +230,7 @@ fn show_process_count(system: &System) {
     let mut running = 0;
     let mut sleeping = 0;
     let mut stopped = 0;
-// Iterate through all processes in the system
+    // Iterate through all processes in the system
     for (_, process) in system.processes() {
         // Categorize the process based on its current status
         match process.status() {
@@ -238,14 +244,13 @@ fn show_process_count(system: &System) {
             _ => {}
         }
     }
-// Calculate the total number of processes
+    // Calculate the total number of processes
     let total = running + sleeping + stopped;
     println!( // Print the counts for total, running, sleeping, and stopped processes
         "Total processes: {}\nRunning: {}\nSleeping: {}\nStopped: {}",
         total, running, sleeping, stopped
     );
 }
-
 
 fn kill_process(pid: u32) {
     match signal::kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
