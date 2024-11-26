@@ -34,4 +34,4 @@ Journal:
 - 16/11/24: Fatemah added filter processes using status functionality.
 - 24/11/24: Yussuf added EGUI basic skeleton which displays processes and their data with some color coding.
 - 25/11/24: Fatemah changed directory to have cmd and gui, trying to change speed of gui change
-
+- 26/11/24: Yussuf added color coding to CPU, added sort by CPU and Memory (ASC and DESC) and improved process display
