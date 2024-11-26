@@ -15,7 +15,7 @@ Milestone 1 Objectives:
 Later Objectives:
 - GUI	DONE
 - Tree view with parent & children processes
-- Sort processes by CPU usage or memory usage
+- Sort processes by CPU usage or memory usage DONE
 - Send notification if the process reaches a pre-set max for CPU or memory usage
 - Filter processes using status 	DONE
 - Color-coded DONE
