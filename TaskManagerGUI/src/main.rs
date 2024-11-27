@@ -22,7 +22,7 @@ impl TaskManager {
     pub fn new() -> Self {
         Self {
             last_update: Instant::now(),
-            refresh_interval: Duration::from_millis(100),
+            refresh_interval: Duration::from_millis(400),
             system: System::new_all(),
             sort_criteria: SortCriteria::Memory,
             reverse_sort: false,
@@ -34,7 +34,7 @@ impl Default for TaskManager {
     fn default() -> Self {
         TaskManager {
             last_update: Instant::now(),
-            refresh_interval: Duration::from_millis(100),
+            refresh_interval: Duration::from_millis(400),
             system: System::new_all(),
             sort_criteria: SortCriteria::Memory,
             reverse_sort: false,
@@ -87,6 +87,7 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
 
             ui.allocate_space(egui::vec2(0.0, 20.0));
             //display a sorting text to make sure the user knows what we are sorting by instead of guessing
+            
             let sorting_text = format!(
                 "Sorting by: {} ({})",
                 match self.sort_criteria {
@@ -184,12 +185,30 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
                     let mut sorted_processes: Vec<_> = aggregated_processes.into_iter().collect();
                     match self.sort_criteria {
                         SortCriteria::Memory => {
-                            sorted_processes.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+                            sorted_processes.sort_by(|a, b| {
+                                let primary = b.1 .0.cmp(&a.1 .0);
+                                //check if same memory then sort by pid
+                                if primary == std::cmp::Ordering::Equal {
+                                    a.1 .2.cmp(&b.1 .2)
+                                } else {
+                                    primary
+                                }
+                            });
                         }
                         SortCriteria::CPU => {
-                            sorted_processes.sort_by(|a, b| b.1.1.partial_cmp(&a.1.1).unwrap());
+                            sorted_processes.sort_by(|a, b| {
+                                let primary = b.1 .1.partial_cmp(&a.1 .1).unwrap_or(std::cmp::Ordering::Equal); // Descending order
+                                //check if same memory then sort by pid
+                                if primary == std::cmp::Ordering::Equal {
+                                    a.1 .2.cmp(&b.1 .2)
+                                } else {
+                                    primary
+                                }
+                            });
                         }
                     }
+                    
+
                     if self.reverse_sort {
                         sorted_processes.reverse();
                     }
