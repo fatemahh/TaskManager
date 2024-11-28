@@ -1,24 +1,24 @@
 # TaskManager
 Task Manager in Rust for Linux
 Milestone 1 Objectives:
-- View processes ID																																							DONE
-- View processes CPU usage & Memory usage																												DONE
-- View process status		                																												DONE
-- Sort process using most CPU usage																															DONE
-- Sort process using most Memory usage																													DONE
-- Kill process using PID                   																										  DONE
-- Sleep  process using PID                																									  	DONE
-- Resume process using PID               																									     	DONE
-- Search process using PID                																								    	DONE
-- Show total number of processes, sleeping processes, running processes, stopped processes      DONE
+- View processes ID					DONE
+- View processes CPU usage & Memory usage					DONE
+- View process status					DONE
+- Sort process using most CPU usage					DONE
+- Sort process using most Memory usage					DONE
+- Kill process using PID					DONE
+- Sleep  process using PID					DONE
+- Resume process using PID					DONE
+- Search process using PID					DONE
+- Show total number of processes, sleeping processes, running processes, stopped processes			DONE
 
 Later Objectives:
-- GUI																																														DONE
-- Tree view with parent & children processes																										DONE
-- Sort processes by CPU usage or memory usage																									  DONE
-- Send notification if the process reaches a pre-set max for CPU or memory usage 								DONE
-- Filter processes using status 																																DONE
-- Color-coded 																																									DONE
+- GUI					DONE
+- Tree view with parent & children processes					DONE
+- Sort processes by CPU usage or memory usage					DONE
+- Send notification if the process reaches a pre-set max for CPU or memory usage					DONE
+- Filter processes using status					DONE
+- Color-coded					DONE
 - CPU and Memory real-time graph of utilization
 
 Journal:
