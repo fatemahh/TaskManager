@@ -1,4 +1,4 @@
-use sysinfo::{System, ProcessStatus};
+use sysinfo::{System, ProcessStatus, Process};
 use std::{collections::HashMap, time::Duration, io::{self, Write}};
 use std::time::{Instant};
 use clearscreen; // clear terminal screen
@@ -7,18 +7,26 @@ use nix::sys::signal::{self, Signal}; // For sending signals like SIGSTOP/SIGCON
 use nix::unistd::Pid; // For working with PIDs
 use eframe::{self, egui};
 
-// this is a struct that does some UI stuff that I never understood, it is used in 3 parts, this is the first
-// also used to refresh slower
 
-struct TaskManager {
+// PROCESS DISPLAY GUI
+
+struct ProcessDisplay {
     last_update: Instant,
     refresh_interval: Duration,
     system: sysinfo::System, // default value
     sort_criteria: SortCriteria,
     reverse_sort: bool, // ASC or DEC
+
+    // For alerts
+    check_alerts: CheckAlerts,
+    show_alert_popup: bool,
+    alert_pid: u32,
+    alert_name: String,
+    alert_cpu: f32,
+    alert_memory: u64,
 }
 
-impl TaskManager {
+impl ProcessDisplay {
     pub fn new() -> Self {
         Self {
             last_update: Instant::now(),
@@ -26,21 +34,69 @@ impl TaskManager {
             system: System::new_all(),
             sort_criteria: SortCriteria::Memory,
             reverse_sort: false,
+
+            check_alerts: CheckAlerts::new(90.0, 2 * 1024 * 1024 * 1024), // 90% CPU and 2 GB memory
+            show_alert_popup: false,
+            alert_pid: 0,
+            alert_name: String::new(),
+            alert_cpu: 0.0,
+            alert_memory: 0,
         }
     }
 }
 
-impl Default for TaskManager {
+impl Default for ProcessDisplay {
     fn default() -> Self {
-        TaskManager {
+        ProcessDisplay {
             last_update: Instant::now(),
             refresh_interval: Duration::from_millis(400),
             system: System::new_all(),
             sort_criteria: SortCriteria::Memory,
             reverse_sort: false,
+
+            check_alerts: CheckAlerts::new(90.0, 2 * 1024 * 1024 * 1024), // 90% CPU and 2 GB memory
+            show_alert_popup: false,
+            alert_pid: 0,
+            alert_name: String::new(),
+            alert_cpu: 0.0,
+            alert_memory: 0,
         }
     }
 }
+
+// TREE VIEW GUI
+
+struct TreeView {
+    system: sysinfo::System,
+}
+
+impl TreeView {
+    pub fn new() -> Self {
+        Self {
+            system: System::new_all(),
+        }
+    }
+}
+
+impl Default for TreeView {
+    fn default() -> Self {
+        TreeView {
+            system: System::new_all(),
+        }
+    }
+}
+
+// CHECK ALERTS GUI
+
+struct CheckAlerts {
+    system: System,
+    alert_message: Option<String>,
+    cpu_threshold: f32,
+    memory_threshold: u64, // in bytes (e.g., 2 GB = 2 * 1024 * 1024 * 1024)
+}
+
+
+// ---------------------------------------------------------------------------------
 
 // used to determine sort style
 #[derive(PartialEq)] //this is an attribute it can be derived from so that it allows comparisons (If sort_crit==mem)
@@ -53,12 +109,109 @@ fn get_total_memory_mb(system: &sysinfo::System) -> f32 {
     system.total_memory() as f32 / 1024.0 // Convert from KB to MB
 }
 
+impl eframe::App for TreeView {
 
-impl eframe::App for TaskManager { // this is 3rd time struct is used
+    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.system.refresh_all(); // Refresh system info
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Process Tree");
+
+            //HashMap to store parent-child relationships
+            let mut tree_map: HashMap<u32, Vec<u32>> = HashMap::new();
+            for process in self.system.processes().values() {
+                let parent_pid = process.parent().map_or(0, |p| p.as_u32());
+                tree_map
+                    .entry(parent_pid)
+                    .or_default()
+                    .push(process.pid().as_u32());
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                fn show_tree(
+                    ui: &mut egui::Ui,
+                    tree_map: &HashMap<u32, Vec<u32>>,
+                    system: &sysinfo::System,
+                    pid: u32,
+                    depth: usize,
+                ) {
+                    if let Some(children) = tree_map.get(&pid) {
+                        for &child_pid in children {
+                            if let Some(child) = system.process(sysinfo::Pid::from_u32(child_pid)) {
+                                let label = match depth {
+                                    0 => "Parent:".to_string(),
+                                    1 => "  Child:".to_string(),
+                                    _ => format!("{:indent$}Child:", "", indent = depth * 2),
+                                };
+                                ui.label(format!(
+                                    "{} PID: {} - Name: {}",
+                                    label,
+                                    child_pid,
+                                    child.name().to_string_lossy()
+                                ));
+
+                                // Recursively display child processes
+                                show_tree(ui, tree_map, system, child_pid, depth + 1);
+                            }
+                        }
+                    }
+                }
+                show_tree(ui, &tree_map, &self.system, 0, 0);
+            });
+        });
+    }
+}
+
+impl CheckAlerts {
+    // Create a new instance of CheckAlerts with CPU and memory thresholds
+    fn new(cpu_threshold: f32, memory_threshold: u64) -> Self {
+        let mut system = System::new_all();
+        system.refresh_all();
+        CheckAlerts {
+            system,
+            alert_message: None,
+            cpu_threshold,
+            memory_threshold,
+        }
+    }
+
+    // Method to check if any process exceeds the thresholds
+    fn check_for_alerts(&mut self) -> Option<(u32, String, f32, u64)> {
+        // Refresh system data (e.g., processes, memory, CPU usage)
+        self.system.refresh_all();
+
+        // Check each process's CPU and memory usage
+        for (_, process) in self.system.processes() {
+            let cpu_usage = process.cpu_usage();
+            let memory_usage = process.memory();
+
+            // If the process exceeds the threshold, return the process info
+            if cpu_usage > self.cpu_threshold || memory_usage > self.memory_threshold {
+                return Some((
+                    process.pid().as_u32(),
+                    process.name().to_string_lossy().to_string(),
+                    cpu_usage,
+                    memory_usage,
+                ));
+            }
+        }
+        None
+    }
+}
+
+impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
 
     // update here is a special function that is called automatically every frame
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         
+        // Check for alerts on every update
+        if let Some((pid, name, cpu, memory)) = self.check_alerts.check_for_alerts() {
+            self.alert_pid = pid;
+            self.alert_name = name;
+            self.alert_cpu = cpu;
+            self.alert_memory = memory;
+            self.show_alert_popup = true; // Show popup when a threshold is exceeded
+        }
+
         let now = Instant::now();
 
         // Refresh system info only if 0.1 seconds have passed
@@ -69,8 +222,32 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
 
         // Request a repaint
         ctx.request_repaint();
-    
+
         egui::CentralPanel::default().show(ctx, |ui| {
+            
+            // Alert message popup
+            if self.show_alert_popup {
+                // let total_memory = get_total_memory_mb(&self.system) * 1024.0 * 1024.0;
+                let num_cores = self.system.cpus().len() as f32;
+
+                egui::Window::new("High Resource Usage Alert")
+                    .open(&mut true) // The window is open by default
+                    .show(ctx, |ui| {
+                        ui.label(format!(
+                            "PID: {}\nName: {}\nCPU Usage: {:.2}%\nMemory Usage: {} MB",
+                            self.alert_pid,
+                            self.alert_name,
+                            self.alert_cpu / num_cores,
+                            self.alert_memory / 1024 / 1024// Convert memory from bytes to MB
+                        ));
+    
+                        // Button to close the alert window
+                        if ui.button("OK").clicked() {
+                            self.show_alert_popup = false; // Close the popup
+                        }
+                    });
+            }
+
             //some vertical space
             ui.allocate_space(egui::vec2(0.0, 20.0));
             ui.end_row();
@@ -78,10 +255,10 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
             ui.vertical_centered_justified(|ui| {//this centers the text and at the top of the screen
             //here we create a heading element, this element has text
                 ui.heading(
-                    egui::RichText::new("Task Manager")//modify text here
+                    egui::RichText::new("Task Manager") // modify text here
                     .size(50.0) //text size
                     .color(egui::Color32::WHITE) //test color
-                    .strong(), //make it bold
+                    .strong(), // make it bold
                 );
             });
 
@@ -125,7 +302,7 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
                     ui.allocate_space(egui::vec2(30.0, 0.0));
 
                     // create a button, same setup as label but it has clicked event which decides what happens 
-                    // once it is clicked, here we change taskManager struct reverse_sort and sort criteria 
+                    // once it is clicked, here we change ProcessDisplay struct reverse_sort and sort criteria 
                     if ui.button(
                         egui::RichText::new("Memory (MB)")
                             .color(egui::Color32::WHITE)
@@ -249,19 +426,19 @@ impl eframe::App for TaskManager { // this is 3rd time struct is used
                                     .size(15.0),
                             );
                         ui.allocate_space(egui::vec2(20.0, 0.0));
-                        let rounded_cpu = format!("{:.2}%", normalized_cpu);//here we set cpu text color based on cpu value
+                        let rounded_cpu = format!("{:.2}%", normalized_cpu); // here we set cpu text color based on cpu value
                             let cpu_color = if normalized_cpu < 5.0 {
-                                egui::Color32::from_gray(128)//gray if less than 5%
+                                egui::Color32::from_gray(128) // gray if less than 5%
                             } else if normalized_cpu < 30.0 {
-                                egui::Color32::GREEN//green if less than 30%
+                                egui::Color32::GREEN // green if less than 30%
                             } else if normalized_cpu < 60.0 {
-                                egui::Color32::YELLOW//yellow if less thann 60% etc...
+                                egui::Color32::YELLOW // yellow if less thann 60% etc...
                             } else if normalized_cpu < 80.0 {
-                                egui::Color32::from_rgb(255, 165, 0)//this is orange because it isn't predefined like the others
+                                egui::Color32::from_rgb(255, 165, 0) // this is orange because it isn't predefined like the others
                             } else {
                                 egui::Color32::RED
                             };
-                            ui.label(//then create the label with the desired color and text
+                            ui.label( // then create the label with the desired color and text
                                 egui::RichText::new(rounded_cpu)
                                     .color(cpu_color)
                                     .size(15.0),
@@ -500,17 +677,30 @@ fn main() {
       
         match input.split_whitespace().collect::<Vec<&str>>().as_slice() {
             &["GUI", "display"] => {
-                // open the gui with name Task Manager
+                // open the gui with name Process display
                 eframe::run_native(
-                "Task Manager",
+                "GUI Process Display",
                 eframe::NativeOptions {
-                drag_and_drop_support: true,
-                maximized: true,
-                initial_window_size: Some(egui::vec2(800.0, 600.0)), // this determines starting resolution
-                ..Default::default()
+                    drag_and_drop_support: true,
+                    maximized: true,
+                    initial_window_size: Some(egui::vec2(800.0, 600.0)), // this determines starting resolution
+                    ..Default::default()
                 },
-                Box::new(|_cc| Box::<TaskManager>::default()), // second time the struct is used, this is related to memory and how gui is stored
+                Box::new(|_cc| Box::<ProcessDisplay>::default()), // second time the struct is used, this is related to memory and how gui is stored
                 );
+            }
+            &["Tree", "View", "display"] => {            
+                eframe::run_native(
+                    "Process Tree",
+                    eframe::NativeOptions {
+                        drag_and_drop_support: true,
+                        maximized: true,
+                        initial_window_size: Some(egui::vec2(800.0, 600.0)), // this determines starting resolution
+                        ..Default::default()
+                    },
+                    Box::new(|_cc| Box::<TreeView>::default()),
+                )
+                .expect("Failed to start eframe app");
             }
             &["display"] => {
                 display(&mut system);
@@ -557,6 +747,7 @@ fn main() {
                 println!(
                     "Available commands:
                     \n  -- 'GUI display'        : View processes in GUI window
+                    \n  -- 'Tree View display'  : View Tree View of process in GUI window
                     \n  -- 'display'            : View processes info.
                     \n  -- 'display <status>'   : View processes by status (e.g., 'display sleep')
                     \n  -- 'search <proc_id>'   : Search for a process by its PID.
