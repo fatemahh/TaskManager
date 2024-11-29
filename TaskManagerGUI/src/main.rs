@@ -115,7 +115,19 @@ impl eframe::App for TreeView {
         self.system.refresh_all(); // Refresh system info
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Process Tree");
+            ui.allocate_space(egui::vec2(0.0, 20.0));
+            ui.end_row();
+            ui.vertical_centered_justified(|ui| {//this centers the text and at the top of the screen
+                //here we create a heading element, this element has text
+                    ui.heading(
+                        egui::RichText::new("Process Tree") // modify text here
+                        .size(50.0) //text size
+                        .color(egui::Color32::WHITE) //test color
+                        .strong(), // make it bold
+                    );
+                });
+    
+            ui.allocate_space(egui::vec2(0.0, 20.0));
 
             //HashMap to store parent-child relationships
             let mut tree_map: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -127,6 +139,23 @@ impl eframe::App for TreeView {
                     .push(process.pid().as_u32());
             }
             egui::ScrollArea::vertical().show(ui, |ui| {
+                //this is a utlity function that changes process color based on its depth
+                fn get_color_for_depth(depth: usize) -> egui::Color32 {
+                    match depth {
+                        0 => egui::Color32::YELLOW, // paren is yellow
+                        1 => egui::Color32::LIGHT_BLUE, // direct child is light blue
+                        2..=6 => { //from 2 to 6 it goes from purplish to more white
+                            let intensity = 150 + ((depth - 2) as u8 * 25);
+                            egui::Color32::from_rgb(intensity, intensity, 255)
+                        }
+                        7 => egui::Color32::WHITE, //depth 7 has color white
+                        8..=12 => { //from depth 8 to 12 it keeps going closer to gray
+                            let intensity = 255 - ((depth - 8) as u8 * 50);
+                            egui::Color32::from_gray(intensity)
+                        }
+                        _ => egui::Color32::GRAY, //more than 12 is gray
+                    }
+                }
                 fn show_tree(
                     ui: &mut egui::Ui,
                     tree_map: &HashMap<u32, Vec<u32>>,
@@ -137,25 +166,41 @@ impl eframe::App for TreeView {
                     if let Some(children) = tree_map.get(&pid) {
                         for &child_pid in children {
                             if let Some(child) = system.process(sysinfo::Pid::from_u32(child_pid)) {
-                                let label = match depth {
-                                    0 => "Parent:".to_string(),
-                                    1 => "  Child:".to_string(),
-                                    _ => format!("{:indent$}Child:", "", indent = depth * 2),
-                                };
-                                ui.label(format!(
-                                    "{} PID: {} - Name: {}",
-                                    label,
-                                    child_pid,
-                                    child.name().to_string_lossy()
-                                ));
-
-                                // Recursively display child processes
+                                ui.horizontal(|ui| {
+                                    ui.add_space(depth as f32 * 60.0); //increase the value to increase space between parent and child
+                                    
+                                    // Create styled label
+                                    let label_text = match depth {
+                                        0 => "Parent:",
+                                        _ => "Child:",
+                                    };
+                                    
+                                    let text = egui::RichText::new(format!(
+                                        "{} PID: {} - Name: {}",
+                                        label_text,
+                                        child_pid,
+                                        child.name().to_string_lossy()
+                                    ))
+                                    .color(get_color_for_depth(depth))
+                                    .size(15.0);
+                                    
+                                    ui.label(text);
+                                });
+                
+                                // space between elements vertically
+                                ui.add_space(7.0);
+                
                                 show_tree(ui, tree_map, system, child_pid, depth + 1);
                             }
                         }
                     }
                 }
-                show_tree(ui, &tree_map, &self.system, 0, 0);
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        show_tree(ui, &tree_map, &self.system, 0, 0);
+                    });
+                    ui.add_space(50.0); //this adds horizental space between most depth child and scroll bar
+                });
             });
         });
     }
@@ -230,21 +275,43 @@ impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
                 // let total_memory = get_total_memory_mb(&self.system) * 1024.0 * 1024.0;
                 let num_cores = self.system.cpus().len() as f32;
 
-                egui::Window::new("High Resource Usage Alert")
+                egui::Window::new(egui::RichText::new("High Resource Usage Alert")
+                    .size(20.0)
+                    .color(egui::Color32::RED)
+                    .strong()
+                )
                     .open(&mut true) // The window is open by default
                     .show(ctx, |ui| {
-                        ui.label(format!(
-                            "PID: {}\nName: {}\nCPU Usage: {:.2}%\nMemory Usage: {} MB",
-                            self.alert_pid,
-                            self.alert_name,
-                            self.alert_cpu / num_cores,
-                            self.alert_memory / 1024 / 1024// Convert memory from bytes to MB
-                        ));
-    
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "PID: {}\nName: {}\nCPU Usage: {:.2}%\nMemory Usage: {} MB",
+                                self.alert_pid,
+                                self.alert_name,
+                                self.alert_cpu / num_cores,
+                                self.alert_memory / 1024 / 1024 // Convert memory from bytes to MB
+                            ))
+                            .size(16.0)
+                            .color(egui::Color32::LIGHT_RED),
+                        );
+                        // Add space between text and button
+                        ui.add_space(10.0);
+
                         // Button to close the alert window
-                        if ui.button("OK").clicked() {
-                            self.show_alert_popup = false; // Close the popup
-                        }
+                        ui.horizontal(|ui| {
+                            ui.add_space(120.0);
+                        
+                            if ui.button(
+                                egui::RichText::new("OK")
+                                    .size(15.0)
+                                    .color(egui::Color32::WHITE),
+                            )
+                            .clicked()
+                            {
+                                self.show_alert_popup = false; // Close the popup
+                            }
+                        });
+                        ui.add_space(10.0);
                     });
             }
 
@@ -282,61 +349,63 @@ impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
             ui.allocate_space(egui::vec2(0.0, 40.0));
             ui.end_row();
 
+            egui::Grid::new("header_grid").show(ui, |ui| {
+                ui.label(//this creates a UI label with text PID, color white, and size 18
+                    egui::RichText::new("PID")
+                        .color(egui::Color32::WHITE)
+                        .size(18.0)
+                );
+                ui.allocate_space(egui::vec2(20.0, 0.0));//this creates a space, as 2d vector where
+                //20 is the horizontal value and 0 is the vertical one it creates only hroizontal space
+                ui.label(
+                    egui::RichText::new("Name")
+                        .color(egui::Color32::WHITE)
+                        .size(18.0),
+                );
+                ui.allocate_space(egui::vec2(110.0, 0.0));
+
+                // create a button, same setup as label but it has clicked event which decides what happens 
+                // once it is clicked, here we change ProcessDisplay struct reverse_sort and sort criteria 
+                if ui.button(
+                    egui::RichText::new("Memory (MB)")
+                        .color(egui::Color32::WHITE)
+                        .size(18.0),).clicked() {
+                    if let SortCriteria::Memory = self.sort_criteria {
+                        self.reverse_sort = !self.reverse_sort; // Reverse order
+                    } else {
+                        self.sort_criteria = SortCriteria::Memory;
+                        self.reverse_sort = false; // Reset order
+                    }
+                }
+                ui.allocate_space(egui::vec2(20.0, 0.0));
+                if ui.button( 
+                    egui::RichText::new("CPU Usage (%)")
+                .color(egui::Color32::WHITE)
+                .size(18.0),).clicked()
+                {
+                    if let SortCriteria::CPU = self.sort_criteria {
+                        self.reverse_sort = !self.reverse_sort;
+                    } else {
+                        self.sort_criteria = SortCriteria::CPU;
+                        self.reverse_sort = false;
+                    }
+                }
+                ui.allocate_space(egui::vec2(20.0, 0.0));
+                ui.label(
+                    egui::RichText::new("Status")
+                        .color(egui::Color32::WHITE)
+                        .size(18.0),
+                );
+                ui.allocate_space(egui::vec2(20.0, 0.0));
+                ui.end_row();//this creates a new row
+                ui.allocate_space(egui::vec2(0.0, 20.0));
+                ui.end_row();
+            });
+            
             // Create a scrollable area for displaying processes
             egui::ScrollArea::vertical().show(ui, |ui| { // Use `vertical()` for vertical scrolling
                 // Create a table layout to show processes
                 egui::Grid::new("process_grid").show(ui, |ui| {
-
-                    ui.label(//this creates a UI label with text PID, color white, and size 18
-                        egui::RichText::new("PID")
-                            .color(egui::Color32::WHITE)
-                            .size(18.0)
-                    );
-                    ui.allocate_space(egui::vec2(20.0, 0.0));//this creates a space, as 2d vector where
-                    //20 is the horizontal value and 0 is the vertical one it creates only hroizontal space
-                    ui.label(
-                        egui::RichText::new("Name")
-                            .color(egui::Color32::WHITE)
-                            .size(18.0),
-                    );
-                    ui.allocate_space(egui::vec2(30.0, 0.0));
-
-                    // create a button, same setup as label but it has clicked event which decides what happens 
-                    // once it is clicked, here we change ProcessDisplay struct reverse_sort and sort criteria 
-                    if ui.button(
-                        egui::RichText::new("Memory (MB)")
-                            .color(egui::Color32::WHITE)
-                            .size(18.0),).clicked() {
-                        if let SortCriteria::Memory = self.sort_criteria {
-                            self.reverse_sort = !self.reverse_sort; // Reverse order
-                        } else {
-                            self.sort_criteria = SortCriteria::Memory;
-                            self.reverse_sort = false; // Reset order
-                        }
-                    }
-                    ui.allocate_space(egui::vec2(20.0, 0.0));
-                    if ui.button( 
-                        egui::RichText::new("CPU Usage (%)")
-                    .color(egui::Color32::WHITE)
-                    .size(18.0),).clicked()
-                    {
-                        if let SortCriteria::CPU = self.sort_criteria {
-                            self.reverse_sort = !self.reverse_sort;
-                        } else {
-                            self.sort_criteria = SortCriteria::CPU;
-                            self.reverse_sort = false;
-                        }
-                    }
-                    ui.allocate_space(egui::vec2(20.0, 0.0));
-                    ui.label(
-                        egui::RichText::new("Status")
-                            .color(egui::Color32::WHITE)
-                            .size(18.0),
-                    );
-                    ui.allocate_space(egui::vec2(20.0, 0.0));
-                    ui.end_row();//this creates a new row
-                    ui.allocate_space(egui::vec2(0.0, 20.0));
-                    ui.end_row();
 
                     // Collect and sort processes by memory
                     let mut aggregated_processes: HashMap<String, (u64, f32, Option<u32>, Option<ProcessStatus>)> = HashMap::new();
@@ -425,7 +494,7 @@ impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
                                  .color(memory_color)
                                     .size(15.0),
                             );
-                        ui.allocate_space(egui::vec2(20.0, 0.0));
+                        ui.allocate_space(egui::vec2(110.0, 0.0));
                         let rounded_cpu = format!("{:.2}%", normalized_cpu); // here we set cpu text color based on cpu value
                             let cpu_color = if normalized_cpu < 5.0 {
                                 egui::Color32::from_gray(128) // gray if less than 5%
@@ -444,7 +513,7 @@ impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
                                     .size(15.0),
                             );
                         // Same as cpu
-                        ui.allocate_space(egui::vec2(20.0, 0.0));
+                        ui.allocate_space(egui::vec2(110.0, 0.0));
                         let st_color = match status {
                             Some(ProcessStatus::Run) => {
                                 egui::Color32::GREEN
@@ -459,6 +528,7 @@ impl eframe::App for ProcessDisplay { // this is 3rd time struct is used
                                 .color(st_color)
                                 .size(15.0),
                         );
+                        ui.allocate_space(egui::vec2(50.0, 0.0));
                         ui.end_row();
                         ui.allocate_space(egui::vec2(0.0, 2.0));
                         ui.end_row();
