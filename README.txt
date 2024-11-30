@@ -33,7 +33,8 @@ Journal:
 - 15/11/24: Mariam implemented functionality to show the total number of processes, as well as the number of sleeping, running, and stopped processes.
 - 16/11/24: Fatemah added filter processes using status functionality.
 - 24/11/24: Yussuf added EGUI basic skeleton which displays processes and their data with some color coding.
-- 25/11/24: Fatemah changed directory to have cmd and gui, trying to change speed of gui change
-- 26/11/24: Yussuf added color coding to CPU, added sort by CPU and Memory (ASC and DESC) and improved process display
-- 26/11/24: Fatemah combined the GUI and CMD in TaskManagerGUI, you can now open both in TaskManagerGUI, also rearranged the code for clarity
-- 28/11/24: Fatemah combined tree view with full code, implemented sending notification if process reaches max cpu or mem usage
+- 25/11/24: Fatemah changed directory to have cmd and gui, trying to change speed of gui change.
+- 26/11/24: Yussuf added color coding to CPU, added sort by CPU and Memory (ASC and DESC) and improved process display.
+- 26/11/24: Fatemah combined the GUI and CMD in TaskManagerGUI, you can now open both in TaskManagerGUI, also rearranged the code for clarity.
+- 28/11/24: Fatemah combined tree view with full code, implemented sending notification if process reaches max cpu or mem usage.
+- 29/11/24: Yussuf added sticky headers, improved Tree view look, and improved notifications look.
