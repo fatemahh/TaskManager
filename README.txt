@@ -39,3 +39,4 @@ Journal:
 - 28/11/24: Amany implemented the tree view with parent and child processes in separate folder.
 - 28/11/24: Fatemah combined tree view with full code, implemented sending notification if process reaches max cpu or mem usage.
 - 29/11/24: Yussuf added sticky headers, improved Tree view look, and improved notifications look.
+- 30/11/24: Fatemah did a final test before demo.
