@@ -36,5 +36,6 @@ Journal:
 - 25/11/24: Fatemah changed directory to have cmd and gui, trying to change speed of gui change.
 - 26/11/24: Yussuf added color coding to CPU, added sort by CPU and Memory (ASC and DESC) and improved process display.
 - 26/11/24: Fatemah combined the GUI and CMD in TaskManagerGUI, you can now open both in TaskManagerGUI, also rearranged the code for clarity.
+- 28/11/24: Amany implemented the tree view with parent and child processes in separate folder.
 - 28/11/24: Fatemah combined tree view with full code, implemented sending notification if process reaches max cpu or mem usage.
 - 29/11/24: Yussuf added sticky headers, improved Tree view look, and improved notifications look.
